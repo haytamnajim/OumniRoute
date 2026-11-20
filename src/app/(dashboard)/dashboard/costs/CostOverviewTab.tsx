@@ -148,7 +148,8 @@ const EXPLORER_GROUP_OPTIONS: Array<{
   { value: "serviceTier", labelKey: "groupServiceTier" },
 ];
 
-const CHART_COLORS = [
+// Chart colors for cost visualizations (used in CostCharts component)
+const _CHART_COLORS = [
   "#10b981",
   "#06b6d4",
   "#f59e0b",
@@ -177,21 +178,25 @@ function formatWeekdayLabel(day: string, locale: string): string {
   );
 }
 
-export function createCurrencyFormatter(locale: string) {
+export function createCurrencyFormatter(locale: string, currency: "USD" | "AED" | "MAD" = "USD") {
   return new Intl.NumberFormat(locale, {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 }
 
-function formatCurrencyCost(locale: string, value: number): string {
+function formatCurrencyCost(
+  locale: string,
+  value: number,
+  currency: "USD" | "AED" | "MAD" = "USD"
+): string {
   const numericValue = Number(value || 0);
   if (!Number.isFinite(numericValue) || numericValue === 0) {
     return new Intl.NumberFormat(locale, {
       style: "currency",
-      currency: "USD",
+      currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(0);
@@ -201,7 +206,7 @@ function formatCurrencyCost(locale: string, value: number): string {
   const fractionDigits = absValue < 0.01 ? 6 : absValue < 1 ? 4 : 2;
   return new Intl.NumberFormat(locale, {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).format(numericValue);
@@ -219,7 +224,7 @@ const FLAT_RATE_ESTIMATE_CSV_NOTE =
   "Includes token-price estimates for flat-rate subscriptions; not billed cost.";
 
 function generateCSV(analytics: UsageAnalyticsPayload, locale: string): string {
-  const currencyFormatter = createCurrencyFormatter(locale);
+  const currencyFormatter = createCurrencyFormatter(locale, currency);
   const lines: string[] = [];
   // Only an explicit `true` means estimate mode; omitted/false/malformed stays
   // billed-cost, which is what the API itself does with the query parameter.
@@ -243,14 +248,14 @@ function generateCSV(analytics: UsageAnalyticsPayload, locale: string): string {
   lines.push("");
 
   lines.push("## Daily Cost Trend");
-  lines.push("Date,Cost (USD)");
+  lines.push(`Date,Cost (${currency})`);
   for (const row of analytics.dailyTrend) {
     lines.push(`${csvCell(row.date)},${row.cost.toFixed(6)}`);
   }
   lines.push("");
 
   lines.push("## Cost by Provider");
-  lines.push("Provider,Requests,Total Tokens,Cost (USD)");
+  lines.push(`Provider,Requests,Total Tokens,Cost (${currency})`);
   for (const row of analytics.byProvider) {
     lines.push(
       [row.provider, row.requests, row.totalTokens, row.cost.toFixed(6)].map(csvCell).join(",")
@@ -259,7 +264,7 @@ function generateCSV(analytics: UsageAnalyticsPayload, locale: string): string {
   lines.push("");
 
   lines.push("## Cost by Model");
-  lines.push("Model,Requests,Total Tokens,Cost (USD)");
+  lines.push(`Model,Requests,Total Tokens,Cost (${currency})`);
   for (const row of analytics.byModel) {
     lines.push(
       [row.model, row.requests, row.totalTokens, row.cost.toFixed(6)].map(csvCell).join(",")
@@ -268,7 +273,7 @@ function generateCSV(analytics: UsageAnalyticsPayload, locale: string): string {
   lines.push("");
 
   lines.push("## Cost by API Key");
-  lines.push("API Key,Requests,Total Tokens,Cost (USD)");
+  lines.push(`API Key,Requests,Total Tokens,Cost (${currency})`);
   for (const row of analytics.byApiKey || []) {
     lines.push(
       [row.apiKeyName || row.apiKey, row.requests, row.totalTokens, row.cost.toFixed(6)]
@@ -279,7 +284,7 @@ function generateCSV(analytics: UsageAnalyticsPayload, locale: string): string {
   lines.push("");
 
   lines.push("## Cost by Account");
-  lines.push("Account,Requests,Total Tokens,Cost (USD)");
+  lines.push(`Account,Requests,Total Tokens,Cost (${currency})`);
   for (const row of analytics.byAccount || []) {
     lines.push(
       [row.account, row.requests, row.totalTokens, row.cost.toFixed(6)].map(csvCell).join(",")
@@ -329,7 +334,11 @@ export default function CostOverviewTab() {
   const selectedApiKeyIds = useMemo(() => parseApiKeyIds(apiKeyIdsParam), [apiKeyIdsParam]);
   const selectedApiKeyId = selectedApiKeyIds.length === 1 ? selectedApiKeyIds[0] : null;
   const apiKeyFilter = useMemo(() => selectedApiKeyIds.join(","), [selectedApiKeyIds]);
-  const currencyFormatter = useMemo(() => createCurrencyFormatter(locale), [locale]);
+  const [currency, setCurrency] = useState<"USD" | "AED" | "MAD">("USD");
+  const currencyFormatter = useMemo(
+    () => createCurrencyFormatter(locale, currency),
+    [locale, currency]
+  );
   const [range, setRange] = useState<CostRange>(() => parseCostRange(searchParams.get("range")));
   const [analytics, setAnalytics] = useState<UsageAnalyticsPayload | null>(null);
   const [presetCosts, setPresetCosts] = useState<Record<"1d" | "7d" | "30d", number>>({
@@ -516,6 +525,36 @@ export default function CostOverviewTab() {
             <p className="text-sm text-text-muted mt-1">{t("overviewDescription")}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
+              <span
+                className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-muted"
+                id="currency-icon"
+              >
+                currency_bitcoin
+              </span>
+              <button
+                onClick={() =>
+                  setCurrency(currency === "USD" ? "AED" : currency === "AED" ? "MAD" : "USD")
+                }
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-text-muted hover:text-text-main hover:bg-surface/50 rounded-lg border border-border/30 transition-colors"
+                title={
+                  currency === "USD"
+                    ? "USD"
+                    : currency === "AED"
+                      ? "Dirham Émirats"
+                      : "Dirham Maroc"
+                }
+              >
+                <span className="material-symbols-outlined text-sm">
+                  {currency === "USD"
+                    ? "monetization_on"
+                    : currency === "AED"
+                      ? "currency_dirham"
+                      : "currency_dirham"}
+                </span>
+                {currency}
+              </button>
+            </div>
             {summary.streak > 0 && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
                 <span className="material-symbols-outlined text-amber-400 text-sm">
@@ -572,25 +611,25 @@ export default function CostOverviewTab() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard
           label={t("spendToday")}
-          value={formatCurrencyCost(locale, presetCosts["1d"] || 0)}
+          value={formatCurrencyCost(locale, presetCosts["1d"] || 0, currency)}
           loading={summaryLoading}
           color="text-emerald-400"
         />
         <MetricCard
           label={t("spend7d")}
-          value={formatCurrencyCost(locale, presetCosts["7d"] || 0)}
+          value={formatCurrencyCost(locale, presetCosts["7d"] || 0, currency)}
           loading={summaryLoading}
           color="text-sky-400"
         />
         <MetricCard
           label={t("spend30d")}
-          value={formatCurrencyCost(locale, presetCosts["30d"] || 0)}
+          value={formatCurrencyCost(locale, presetCosts["30d"] || 0, currency)}
           loading={summaryLoading}
           color="text-violet-400"
         />
         <MetricCard
           label={t("selectedWindow")}
-          value={formatCurrencyCost(locale, summary.totalCost || 0)}
+          value={formatCurrencyCost(locale, summary.totalCost || 0, currency)}
           subValue={selectedRangeLabel}
           color="text-amber-400"
         />
@@ -628,7 +667,7 @@ export default function CostOverviewTab() {
           />
           <CompactMetric
             label={t("avgCostPerRequest")}
-            value={formatCurrencyCost(locale, avgCostPerRequest)}
+            value={formatCurrencyCost(locale, avgCostPerRequest, currency)}
           />
         </div>
       </Card>
@@ -980,7 +1019,11 @@ function CostExplorerCard({
   onSort: (sortKey: CostExplorerSortKey) => void;
 }) {
   const t = useTranslations("costs");
-  const currencyFormatter = useMemo(() => createCurrencyFormatter(locale), [locale]);
+  const [currency, setCurrency] = useState<"USD" | "AED" | "MAD">("USD");
+  const currencyFormatter = useMemo(
+    () => createCurrencyFormatter(locale, currency),
+    [locale, currency]
+  );
   const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const compactFormatter = useMemo(
     () => new Intl.NumberFormat(locale, { notation: "compact" }),
@@ -1012,7 +1055,7 @@ function CostExplorerCard({
 
   function formatCost(value: number): string {
     if (!hasCostData && value <= 0) return t("legacyOrFree");
-    return formatCurrencyCost(locale, value);
+    return formatCurrencyCost(locale, value, currency);
   }
 
   function formatRowCount(): string {
